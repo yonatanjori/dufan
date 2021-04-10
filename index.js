@@ -1,13 +1,26 @@
-import express from 'express';
-import { json } from 'body-parser';
+const express = require('express');
+const bodyParser = require('body-parser');
+const { Pool } = require('pg');
+require('dotenv').config();
 
 const PORT = process.env.PORT || 5000;
 
-import { Pool } from 'pg';
-const pool = new Pool({
-	connectionString: process.env.DATABASE_URL,
-	ssl: { rejectUnauthorized: false }
-});
+let config;
+if (process.env.DATABASE_URL) {
+  config = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  };
+} else {
+  config = {
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME
+  };
+}
+
+const pool = new Pool(config);
 
 function isBodyValid(req, requiredAttributes) {
   let valid;
@@ -19,7 +32,7 @@ function isBodyValid(req, requiredAttributes) {
 }
 
 express()
-	.use(json())
+  .use(bodyParser.json())
   .post('/pembacaan', (req, res) => {
 
     if (isBodyValid(req, ['suhu', 'tekanan', 'ketinggian'])) {
@@ -41,16 +54,20 @@ express()
   })
   .get('/prediksi', (req, res) => {
 
-    // WHERE id = MAX(SELECT id FROM pembacaan)
     pool.connect().then((client) => {
       return client.query('SELECT * FROM pembacaan').then((result) => {
         client.release();
-        res.status(200).json(result.rows[0]);
-      }).catch((err) => {
-        client.release();
-        console.log(err.stack);
-        res.status(500).json('Informasi prediksi gagal diperoleh');
-      });
+        return result.rows;
+      })
+    }).then((results) => {
+      res.set('Content-Type', 'text/html');
+      res.status(200).send(
+        `<html><body>suhu: ${results[0].suhu} <br/> tekanan: ${results[0].tekanan} <br/> ketinggian: ${results[0].ketinggian}</body></html>`
+      );
+    }).catch((err) => {
+      client.release();
+      console.log(err.stack);
+      res.status(500).json('Informasi prediksi gagal diperoleh');
     });
 
   })
